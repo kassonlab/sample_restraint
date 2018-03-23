@@ -241,12 +241,15 @@ class EnsembleRestraintBuilder
             py::dict parameter_dict = element.attr("params");
             // \todo Check for the presence of these dictionary keys to avoid hard-to-diagnose error.
 
-            // Get positional parameters: two ints and two doubles.
+            // Get positional parameters.
             py::list sites = parameter_dict["sites"];
-            site1Index_ = py::cast<unsigned long>(sites[0]);
-            site2Index_ = py::cast<unsigned long>(sites[1]);
+            for (auto&& site : sites)
+            {
+                siteIndices_.emplace_back(py::cast<unsigned long>(site));
+            }
 
             auto nbins = py::cast<size_t>(parameter_dict["nbins"]);
+            auto binWidth = py::cast<double>(parameter_dict["binWidth"]);
             auto min_dist = py::cast<double>(parameter_dict["min_dist"]);
             auto max_dist = pybind11::cast<double>(parameter_dict["max_dist"]);
             auto experimental = pybind11::cast<std::vector<double>>(parameter_dict["experimental"]);
@@ -257,7 +260,7 @@ class EnsembleRestraintBuilder
             auto K = pybind11::cast<double>(parameter_dict["k"]);
             auto sigma = pybind11::cast<double>(parameter_dict["sigma"]);
 
-            auto params = plugin::make_ensemble_params(nbins, min_dist, max_dist, experimental, nsamples, sample_period, nwindows, window_update_period, K, sigma);
+            auto params = plugin::make_ensemble_params(nbins, binWidth, min_dist, max_dist, experimental, nsamples, sample_period, nwindows, window_update_period, K, sigma);
             params_ = std::move(*params);
 
             // Note that if we want to grab a reference to the Context or its communicator, we can get it
@@ -282,27 +285,21 @@ class EnsembleRestraintBuilder
             // Need to capture Python communicator and pybind syntax in closure so EnsembleResources
             // can just call with matrix arguments.
 
-            // Binds nothing, but needs py::object comm
-            auto function_helper = [](py::object comm,
-                                      const plugin::Matrix<double>& send,
-                                      plugin::Matrix<double>* receive)
-                {
-                    assert(py::hasattr(comm, "Allreduce"));
-                    comm.attr("Allreduce")(send, receive);
-                };
-
-            // Bind a copy of py::object comm
-            assert(py::hasattr(context_, "_communicator"));
-            auto comm = context_.attr("_communicator");
-
-            using namespace std::placeholders;
-            auto functor = std::bind(function_helper, std::move(comm), _1, _2);
+            // This can be replaced with a subscription and delayed until launch, if necessary.
+            assert(py::hasattr(context_, "ensemble_update"));
+            // make a local copy of the Python object so we can capture it in the lambda
+            auto update = context_.attr("ensemble_update");
+            // Make a bindings-independent callable with standardizeable signature.
+            auto functor = [update](const plugin::Matrix<double>& send, plugin::Matrix<double>* receive)
+            {
+                update(send, receive);
+            };
 
             // To use a reduce function on the Python side, we need to provide it with a Python buffer-like object,
             // so we will create one here. Note: it looks like the SharedData element will be useful after all.
             auto resources = std::make_shared<plugin::EnsembleResources>(std::move(functor));
 
-            auto potential = PyRestraint<plugin::RestraintModule<plugin::EnsembleRestraint>>::create(site1Index_, site2Index_, params_, resources);
+            auto potential = PyRestraint<plugin::RestraintModule<plugin::EnsembleRestraint>>::create(siteIndices_, params_, resources);
 
             auto subscriber = subscriber_;
             py::list potential_list = subscriber.attr("potential");
@@ -326,8 +323,7 @@ class EnsembleRestraintBuilder
 
         py::object subscriber_;
         py::object context_;
-        unsigned long site1Index_;
-        unsigned long site2Index_;
+        std::vector<unsigned long int> siteIndices_;
 
         plugin::ensemble_input_param_type params_;
 };
