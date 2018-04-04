@@ -314,16 +314,19 @@ class EnsembleHarmonic
  *
  * This is boiler plate that will be templated and moved.
  */
-class EnsembleRestraint : public ::gmx::IRestraintPotential, private EnsembleHarmonic
+template<class T>
+class Restraint : public ::gmx::IRestraintPotential, private T
 {
     public:
-        using EnsembleHarmonic::input_param_type;
+        using input_param_type = typename T::input_param_type;
+        using T::calculate;
+        using T::callback;
 
-        EnsembleRestraint(const std::vector<unsigned long> &sites,
-                          const input_param_type &params,
-                          std::shared_ptr<EnsembleResources> resources
+        Restraint(const std::vector<unsigned long> &sites,
+                  const input_param_type &params,
+                  std::shared_ptr<EnsembleResources> resources
         ) :
-                EnsembleHarmonic(params),
+                T(params),
                 sites_{sites},
                 resources_{std::move(resources)}
         {}
@@ -368,7 +371,7 @@ class EnsembleRestraint : public ::gmx::IRestraintPotential, private EnsembleHar
 
 // Just declare the template instantiation here for client code.
 // We will explicitly instantiate a definition in the .cpp file where the input_param_type is defined.
-extern template class RestraintModule<EnsembleRestraint>;
+extern template class RestraintModule<Restraint<EnsembleHarmonic>>;
 
 } // end namespace plugin
 

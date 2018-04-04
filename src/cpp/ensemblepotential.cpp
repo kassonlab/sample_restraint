@@ -317,6 +317,6 @@ EnsembleResourceHandle EnsembleResources::getHandle() const
 }
 
 // Explicitly instantiate a definition.
-template class ::plugin::RestraintModule<EnsembleRestraint>;
+template class ::plugin::RestraintModule<Restraint<EnsembleHarmonic>>;
 
 } // end namespace plugin
