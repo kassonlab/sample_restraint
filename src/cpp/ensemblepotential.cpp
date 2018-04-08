@@ -154,7 +154,6 @@ EnsembleHarmonic::EnsembleHarmonic(const input_param_type &params) :
 {
 }
 
-// Todo: reference coordinate for PBC problems.
 void EnsembleHarmonic::callback(gmx::Vector v,
                                 gmx::Vector v0,
                                 double t,
