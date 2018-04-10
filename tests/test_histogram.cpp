@@ -43,7 +43,7 @@ TEST(EnsembleHistogramPotentialPlugin, ForceCalc)
     // Get a dummy EnsembleResources. We aren't testing that here.
     auto dummyFunc = [](const plugin::Matrix<double>&, plugin::Matrix<double>*){
         return;};
-    auto resource = std::make_shared<plugin::EnsembleResources>(dummyFunc);
+    auto resource = plugin::EnsembleResources::Builder().build();
 
     // Define a reference distribution with a triangular peak at the 1.0 bin.
     const std::vector<double>

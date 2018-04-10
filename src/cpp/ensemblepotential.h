@@ -374,7 +374,6 @@ class Restraint : public ::gmx::IRestraintPotential, private PotentialT
     public:
         using input_param_type = typename PotentialT::input_param_type;
         using PotentialT::calculate;
-        using PotentialT::callback;
 
         using callbackType = std::function<void(gmx::Vector, gmx::Vector, double, const EnsembleResources &)>;
 
@@ -421,24 +420,28 @@ class Restraint : public ::gmx::IRestraintPotential, private PotentialT
 
     private:
 
-        // If left unspecialized, returns an empty functor. Specialization occurs automatically for
-        // PotentialT providing a valid callback() member function. Future versions can provide a
-        // list of registered callbacks.
-        template<typename T, typename = typename std::enable_if<has_callback<T>::value>::type>
-        callbackType getCallback()
-        {
-            return {};
-        }
-
-        template<typename> callbackType getCallback()
-        {
-            return {};
-        }
-
         std::vector<unsigned long int> sites_;
         double callbackPeriod_;
         double nextCallback_;
         std::shared_ptr<EnsembleResources> resources_;
+
+        template<typename T>
+        auto dispatchCallback(gmx::Vector v,
+                              gmx::Vector v0,
+                              double t) -> decltype(T::callback(v, v0, t, *resources_))
+        {
+            T::callback(v, v0, t, *resources_);
+        }
+
+        // If the PotentialT defines both callback signatures, both of these template signatures
+        // will match and bad things could happen.
+        template<typename T>
+        auto dispatchCallback(gmx::Vector v,
+                              gmx::Vector v0,
+                              double t) -> decltype(T::callback(v, v0, t))
+        {
+            T::callback(v, v0, t);
+        }
 };
 
 template<class PotentialT>
@@ -448,11 +451,7 @@ void Restraint<PotentialT>::update(gmx::Vector v,
 {
     if (t >= nextCallback_)
     {
-        auto callback = getCallback<PotentialT>();
-        if (callback)
-        {
-            callback(v, v0, t, *resources_);
-        }
+        dispatchCallback<PotentialT>(v, v0, t);
         nextCallback_ += callbackPeriod_;
     }
 };
