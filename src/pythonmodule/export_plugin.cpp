@@ -4,6 +4,8 @@
 
 #include "export_plugin.h"
 
+#include <memory>
+
 #include "pybind11/pybind11.h"
 #include "pybind11/stl.h"
 
@@ -104,7 +106,7 @@ std::shared_ptr<gmxapi::MDModule> PyRestraint<plugin::HarmonicModule>::getModule
 }
 
 template<>
-std::shared_ptr<gmxapi::MDModule> PyRestraint<plugin::RestraintModule<plugin::EnsembleRestraint>>::getModule()
+std::shared_ptr<gmxapi::MDModule> PyRestraint<plugin::RestraintModule<plugin::Restraint<plugin::EnsembleHarmonic>>>::getModule()
 {
     return shared_from_this();
 }
@@ -240,11 +242,11 @@ class EnsembleRestraintBuilder
             // raise if the element is invalid.
             assert(py::hasattr(element, "params"));
 
-            // Params attribute should be a Python list
+            // Params attribute should be a Python dict
             py::dict parameter_dict = element.attr("params");
             // \todo Check for the presence of these dictionary keys to avoid hard-to-diagnose error.
 
-            // Get positional parameters.
+            // Sites should be a list of two or more indices.
             py::list sites = parameter_dict["sites"];
             for (auto&& site : sites)
             {
@@ -272,7 +274,9 @@ class EnsembleRestraintBuilder
                                                      nWindows,
                                                      k,
                                                      sigma);
-            params_ = std::move(*params);
+            potentialParams_ = std::move(*params);
+
+            callBackPeriod_ = samplePeriod;
 
             // Note that if we want to grab a reference to the Context or its communicator, we can get it
             // here through element.workspec._context. We need a more general API solution, but this code is
@@ -308,11 +312,24 @@ class EnsembleRestraintBuilder
                 update(send, receive, name);
             };
 
-            // To use a reduce function on the Python side, we need to provide it with a Python buffer-like object,
-            // so we will create one here. Note: it looks like the SharedData element will be useful after all.
-            auto resources = std::make_shared<plugin::EnsembleResources>(std::move(functor));
+            plugin::EnsembleResources::Builder resourcesBuilder;
+            resourcesBuilder.setFunctor(std::move(functor));
+            resourcesBuilder.setCallBackPeriod(callBackPeriod_);
 
-            auto potential = PyRestraint<plugin::RestraintModule<plugin::EnsembleRestraint>>::create(name_, siteIndices_, params_, resources);
+            auto resources = resourcesBuilder.build();
+
+            auto potential = PyRestraint<plugin::RestraintModule<plugin::Restraint<plugin::EnsembleHarmonic>>>::create(name_, siteIndices_, potentialParams_, resources);
+
+
+            // We either need to template update on the existence of potential.callback
+            // (not particularly flexible) or getCallback() (a bit more demanding on the developer)...
+            // Or we can allow registering a callback that is a member function, but we don't want to
+            // force people to use more obscure C++ syntax or features. Maybe we could put a helper
+            // function in PyRestraint.
+
+//            // for a function_helper taking 3 args, to capture the first at bind and produce a functor taking 2 args:
+//            using namespace std::placeholders;
+//            auto functor = std::bind(function_helper, std::move(comm), _1, _2);
 
             auto subscriber = subscriber_;
             py::list potentialList = subscriber.attr("potential");
@@ -338,9 +355,11 @@ class EnsembleRestraintBuilder
         py::object context_;
         std::vector<unsigned long int> siteIndices_;
 
-        plugin::ensemble_input_param_type params_;
+        plugin::ensemble_input_param_type potentialParams_;
 
         std::string name_;
+
+        double callBackPeriod_;
 };
 
 std::unique_ptr<HarmonicRestraintBuilder> createHarmonicBuilder(const py::object element)
@@ -436,12 +455,12 @@ PYBIND11_MODULE(myplugin, m) {
                          &EnsembleRestraintBuilder::addSubscriber);
     ensembleBuilder.def("build", &EnsembleRestraintBuilder::build);
 
-    using PyEnsemble = PyRestraint<plugin::RestraintModule<plugin::EnsembleRestraint>>;
-    py::class_<plugin::EnsembleRestraint::input_param_type> ensembleParams(m, "EnsembleRestraintParams");
+    using PyEnsemble = PyRestraint<plugin::RestraintModule<plugin::Restraint<plugin::EnsembleHarmonic>>>;
+    py::class_<plugin::Restraint<plugin::EnsembleHarmonic>::input_param_type> ensembleParams(m, "EnsembleRestraintParams");
     // Builder to be returned from ensemble_restraint
     // API object to build.
     py::class_<PyEnsemble, std::shared_ptr<PyEnsemble>> ensemble(m, "EnsembleRestraint");
-    // EnsembleRestraint can only be created via builder for now.
+    // Restraint can only be created via builder for now.
     ensemble.def("bind", &PyEnsemble::bind, "Implement binding protocol");
 
 

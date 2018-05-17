@@ -5,9 +5,11 @@
 #ifndef HARMONICRESTRAINT_ENSEMBLEPOTENTIAL_H
 #define HARMONICRESTRAINT_ENSEMBLEPOTENTIAL_H
 
-#include <vector>
 #include <array>
+#include <functional>
 #include <mutex>
+#include <type_traits>
+#include <vector>
 
 #include "gmxapi/gromacsfwd.h"
 #include "gmxapi/md/mdmodule.h"
@@ -109,15 +111,53 @@ class EnsembleResourceHandle
 class EnsembleResources
 {
     public:
-        explicit EnsembleResources(std::function<void(const Matrix<double>&, Matrix<double>*)>&& reduce) :
-            reduce_(reduce)
-        {};
-
         EnsembleResourceHandle getHandle() const;
 
+        class Builder;
+
     private:
-//        std::shared_ptr<Matrix> _matrix;
+        EnsembleResources(std::function<void(const Matrix<double>&, Matrix<double>*)>&& reduce,
+                          double callBackPeriod,
+                          bool hasCallBack) :
+            reduce_{std::forward<decltype(reduce_)>(reduce)},
+            callBackPeriod_{callBackPeriod},
+            hasCallBack_{hasCallBack}
+        {};
+
+        //        std::shared_ptr<Matrix> _matrix;
         std::function<void(const Matrix<double>&, Matrix<double>*)> reduce_;
+        double callBackPeriod_;
+        bool hasCallBack_{false};
+};
+
+class EnsembleResources::Builder
+{
+    public:
+        std::shared_ptr<EnsembleResources> build()
+        {
+            //auto resources = std::make_shared<EnsembleResources>(std::move(functor_), callBackPeriod_, hasCallBack_);
+            EnsembleResources new_resources{std::move(functor_), callBackPeriod_, hasCallBack_};
+            auto resources = std::make_shared<EnsembleResources>(std::move(new_resources));
+            return resources;
+        };
+
+        Builder& setFunctor(std::function<void(const Matrix<double>&, Matrix<double>*)>&& functor)
+        {
+            functor_ = std::move(functor);
+            return *this;
+        }
+
+        Builder& setCallBackPeriod(double t)
+        {
+            callBackPeriod_ = t;
+            hasCallBack_ = true;
+            return *this;
+        }
+
+    private:
+        std::function<void(const Matrix<double>&, Matrix<double>*)> functor_;
+        double callBackPeriod_;
+        bool hasCallBack_{false};
 };
 
 /*!
@@ -309,22 +349,42 @@ class EnsembleHarmonic
         double sigma_;
 };
 
+template<class T>
+struct has_callback
+{
+    private:
+        typedef std::true_type yes;
+        typedef std::false_type no;
+
+        template<typename U> static auto test() -> decltype(U::callback(), yes());
+        template<typename> static no test();
+
+    public:
+        static constexpr bool value = std::is_same<decltype(test<T>()), yes>::value;
+};
+
 /*!
  * \brief Use EnsembleHarmonic to implement a RestraintPotential
  *
  * This is boiler plate that will be templated and moved.
  */
-class EnsembleRestraint : public ::gmx::IRestraintPotential, private EnsembleHarmonic
+template<class PotentialT>
+class Restraint : public ::gmx::IRestraintPotential, private PotentialT
 {
     public:
-        using EnsembleHarmonic::input_param_type;
+        using input_param_type = typename PotentialT::input_param_type;
+        using PotentialT::calculate;
 
-        EnsembleRestraint(const std::vector<unsigned long> &sites,
-                          const input_param_type &params,
-                          std::shared_ptr<EnsembleResources> resources
+        using callbackType = std::function<void(gmx::Vector, gmx::Vector, double, const EnsembleResources &)>;
+
+        Restraint(std::vector<unsigned long> sites,
+                  const input_param_type& params,
+                  std::shared_ptr<EnsembleResources> resources
         ) :
-                EnsembleHarmonic(params),
-                sites_{sites},
+                PotentialT(params),
+                sites_{std::move(sites)},
+                callbackPeriod_{},
+                nextCallback_{},
                 resources_{std::move(resources)}
         {}
 
@@ -333,6 +393,7 @@ class EnsembleRestraint : public ::gmx::IRestraintPotential, private EnsembleHar
                 return sites_;
         }
 
+        // todo: template on call signature availability using decltype or maybe an SFINAE check in the return type
         gmx::PotentialPointData evaluate(gmx::Vector r1,
                                          gmx::Vector r2,
                                          double t) override
@@ -342,16 +403,15 @@ class EnsembleRestraint : public ::gmx::IRestraintPotential, private EnsembleHar
 
 
         // An update function to be called on the simulation master rank/thread periodically by the Restraint framework.
+        // The function is redefined with a specialization below when PotentialT implements a calculate() member function.
         void update(gmx::Vector v,
                     gmx::Vector v0,
-                    double t) override
+                    double t) override;
+
+        double nextUpdateTime() const override
         {
-            // Todo: use a callback period to mostly bypass this and avoid excessive mutex locking.
-            callback(v,
-                     v0,
-                     t,
-                     *resources_);
-        };
+            return nextCallback_;
+        }
 
         void setResources(std::unique_ptr<EnsembleResources>&& resources)
         {
@@ -359,16 +419,46 @@ class EnsembleRestraint : public ::gmx::IRestraintPotential, private EnsembleHar
         }
 
     private:
+
         std::vector<unsigned long int> sites_;
-//        double callbackPeriod_;
-//        double nextCallback_;
+        double callbackPeriod_;
+        double nextCallback_;
         std::shared_ptr<EnsembleResources> resources_;
+
+        template<typename T>
+        auto dispatchCallback(gmx::Vector v,
+                              gmx::Vector v0,
+                              double t) -> decltype(T::callback(v, v0, t, *resources_))
+        {
+            T::callback(v, v0, t, *resources_);
+        }
+
+        // If the PotentialT defines both callback signatures, both of these template signatures
+        // will match and bad things could happen.
+        template<typename T>
+        auto dispatchCallback(gmx::Vector v,
+                              gmx::Vector v0,
+                              double t) -> decltype(T::callback(v, v0, t))
+        {
+            T::callback(v, v0, t);
+        }
 };
 
+template<class PotentialT>
+void Restraint<PotentialT>::update(gmx::Vector v,
+            gmx::Vector v0,
+            double t)
+{
+    if (t >= nextCallback_)
+    {
+        dispatchCallback<PotentialT>(v, v0, t);
+        nextCallback_ += callbackPeriod_;
+    }
+};
 
 // Just declare the template instantiation here for client code.
 // We will explicitly instantiate a definition in the .cpp file where the input_param_type is defined.
-extern template class RestraintModule<EnsembleRestraint>;
+extern template class RestraintModule<Restraint<EnsembleHarmonic>>;
 
 } // end namespace plugin
 

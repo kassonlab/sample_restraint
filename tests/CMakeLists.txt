@@ -93,3 +93,19 @@ set_tests_properties(EnsembleBoundingPotentialPlugin PROPERTIES
                      WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
                      COMPILE_DEFINITIONS "${GMOCK_COMPILE_DEFINITIONS}"
                      COMPILE_FLAGS "${GMOCK_COMPILE_FLAGS}")
+
+
+# Test the call-back registration and auto-detection in the Restraint<PotentialT> template.
+add_executable(callbacks-test test_callbacks.cpp)
+add_test(RestraintCallbacks callbacks-test)
+
+target_include_directories(callbacks-test PRIVATE ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_SOURCE_DIR}/src/cpp)
+
+set_target_properties(callbacks-test PROPERTIES SKIP_BUILD_RPATH FALSE)
+target_link_libraries(callbacks-test libgromacs Gromacs::gmxapi
+                      gtest_main)
+
+set_tests_properties(RestraintCallbacks PROPERTIES
+                     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
+                     COMPILE_DEFINITIONS "${GMOCK_COMPILE_DEFINITIONS}"
+                     COMPILE_FLAGS "${GMOCK_COMPILE_FLAGS}")
