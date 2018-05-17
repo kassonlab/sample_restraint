@@ -233,13 +233,16 @@ SOL         4055
 @withmpi_only
 @pytest.mark.usefixtures("cleandir")
 def test_ensemble_potential_withmpi():
+    logger.debug("Entering test_ensemble_potential_withmpi")
     import gmx
     import os
     import shutil
     import myplugin
 
+    logger.debug("Importing mpi4py.MPI")
     from mpi4py import MPI
     rank = MPI.COMM_WORLD.Get_rank()
+    logger.debug("test_ensemble_potential_withmpi on rank {} in directory {}".format(rank, os.getcwd()))
 
     tests_dir = os.path.dirname(__file__)
     water = os.path.join(tests_dir, 'data', 'water.gro')
@@ -250,46 +253,47 @@ def test_ensemble_potential_withmpi():
     shutil.copy(water, rank_dir)
 
     # In MPI, this never makes it to grompp. We should get rid of this...
-    try:
-        # use GromacsWrapper if available
-        import gromacs
-        import gromacs.formats
-        from gromacs.tools import Solvate as solvate
-        solvate(o=os.path.join(rank_dir, 'water.gro'), box=[5,5,5])
-        mdpparams = [('integrator', 'md'),
-                     ('nsteps', 1000),
-                     ('nstxout', 100),
-                     ('nstvout', 100),
-                     ('nstfout', 100),
-                     ('tcoupl', 'v-rescale'),
-                     ('tc-grps', 'System'),
-                     ('tau-t', 1),
-                     ('ref-t', 298)]
-        mdp = gromacs.formats.MDP()
-        for param, value in mdpparams:
-            mdp[param] = value
-        mdp.write(os.path.join(rank_dir, 'water.mdp'))
-        with open(os.path.join(rank_dir, 'input.top'), 'w') as fh:
-            fh.write("""#include "gromos43a1.ff/forcefield.itp"
-#include "gromos43a1.ff/spc.itp"
-
-[ system ]
-; Name
-spc
-
-[ molecules ]
-; Compound  #mols
-SOL         4055
-""")
-        gromacs.grompp(f=os.path.join(rank_dir, 'water.mdp'),
-                       c=os.path.join(rank_dir, 'water.gro'),
-                       po=os.path.join(rank_dir, 'water.mdp'),
-                       pp=os.path.join(rank_dir, 'water.top'),
-                       o=os.path.join(rank_dir, 'water.tpr'),
-                       p=os.path.join(rank_dir, 'input.top'))
-        tpr_filename = os.path.join(rank_dir, 'water.tpr')
-    except:
-        from gmx.data import tpr_filename
+#     try:
+#         # use GromacsWrapper if available
+#         import gromacs
+#         import gromacs.formats
+#         from gromacs.tools import Solvate as solvate
+#         solvate(o=os.path.join(rank_dir, 'water.gro'), box=[5,5,5])
+#         mdpparams = [('integrator', 'md'),
+#                      ('nsteps', 1000),
+#                      ('nstxout', 100),
+#                      ('nstvout', 100),
+#                      ('nstfout', 100),
+#                      ('tcoupl', 'v-rescale'),
+#                      ('tc-grps', 'System'),
+#                      ('tau-t', 1),
+#                      ('ref-t', 298)]
+#         mdp = gromacs.formats.MDP()
+#         for param, value in mdpparams:
+#             mdp[param] = value
+#         mdp.write(os.path.join(rank_dir, 'water.mdp'))
+#         with open(os.path.join(rank_dir, 'input.top'), 'w') as fh:
+#             fh.write("""#include "gromos43a1.ff/forcefield.itp"
+# #include "gromos43a1.ff/spc.itp"
+#
+# [ system ]
+# ; Name
+# spc
+#
+# [ molecules ]
+# ; Compound  #mols
+# SOL         4055
+# """)
+#         gromacs.grompp(f=os.path.join(rank_dir, 'water.mdp'),
+#                        c=os.path.join(rank_dir, 'water.gro'),
+#                        po=os.path.join(rank_dir, 'water.mdp'),
+#                        pp=os.path.join(rank_dir, 'water.top'),
+#                        o=os.path.join(rank_dir, 'water.tpr'),
+#                        p=os.path.join(rank_dir, 'input.top'))
+#         tpr_filename = os.path.join(rank_dir, 'water.tpr')
+#     except:
+#         from gmx.data import tpr_filename
+    from gmx.data import tpr_filename
     logger.info("Testing plugin potential with input file {}".format(os.path.abspath(tpr_filename)))
 
     assert gmx.version.api_is_at_least(0,0,5)
