@@ -219,6 +219,8 @@ void EnsembleHarmonic::callback(gmx::Vector v,
         // Get global reduction (sum) and checkpoint.
         assert(temp_window != nullptr);
         // Todo: in reduce function, give us a mean instead of a sum.
+        // Note: with additional infrastructure, the call-back ends here, the ensemble reduce operation has a dependency
+        // on new_window, and the force calculation has a dependency on the result of the reduce operation.
         ensemble.reduce(*new_window,
                         temp_window.get());
 
