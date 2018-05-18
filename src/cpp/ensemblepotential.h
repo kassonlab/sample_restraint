@@ -10,6 +10,7 @@
 #include <mutex>
 
 #include "gmxapi/gromacsfwd.h"
+#include "gmxapi/session.h"
 #include "gmxapi/md/mdmodule.h"
 
 #include "gromacs/restraint/restraintpotential.h"
@@ -84,19 +85,17 @@ class EnsembleResourceHandle
                     Matrix<double> *receive) const;
 
         /*!
-         * \brief Apply a function to each input and accumulate the output.
+         * \brief Issue a stop condition event.
          *
-         * \tparam I Iterable.
-         * \tparam T Output type.
-         * \param iterable iterable object to produce inputs to function
-         * \param output structure that should be present and up-to-date on all ranks.
-         * \param function map each input in iterable through this function to accumulate output.
+         * Can be called on any or all ranks. Sets a condition that will cause the current simulation to shut down
+         * after the current step.
          */
-        template<typename I, typename T>
-        void map_reduce(const I& iterable, T* output, void (*function)(double, const PairHist&, PairHist*));
+        void stop();
 
         // to be abstracted and hidden...
-        const std::function<void(const Matrix<double>&, Matrix<double>*)>* _reduce;
+        const std::function<void(const Matrix<double>&, Matrix<double>*)>* reduce_;
+
+        std::shared_ptr<gmxapi::Session> session_;
 };
 
 /*!
@@ -105,6 +104,10 @@ class EnsembleResourceHandle
  * Provides a connection to the higher-level workflow management with which to access resources and operations. The
  * reference provides no resources directly and we may find that it should not extend the life of a Session or Context.
  * Resources are accessed through Handle objects returned by member functions.
+ *
+ * One way to reframe this is to provide an array of function pointers to trigger the data events for which the plugin
+ * is registered to provide. I think we could use a set of map structures: container for each function call signature,
+ * which in our case is determined by the data type.
  */
 class EnsembleResources
 {
@@ -113,11 +116,31 @@ class EnsembleResources
             reduce_(reduce)
         {};
 
+        /*!
+         * \brief Grant the caller an active handle for the currently executing block of code.
+         *
+         * EnsembleResourceHandle objects provide the accessible features to the client of the EnsembleResources.
+         * If the naming doesn't seem right, please propose alternatives. A handle should not be moved, copied, or
+         * held for any length of time. In other words, use a stack variable, preferably tightly scoped.
+         *
+         * \return Handle to current resources.
+         */
         EnsembleResourceHandle getHandle() const;
 
+        /*!
+         * \brief Acquires a weak pointer to a Session
+         *
+         * \param session weak pointer to Session is reset if acquired by EnsembleResources.
+         */
+        void setSession(std::weak_ptr<gmxapi::Session>&& session);
+
     private:
-//        std::shared_ptr<Matrix> _matrix;
+        //! bound function object to provide ensemble reduce facility.
         std::function<void(const Matrix<double>&, Matrix<double>*)> reduce_;
+
+        // For the moment, instead of extending the life of the session and runner, we'll show some restraint and bind
+        // the functions at the last moment.
+        std::weak_ptr<gmxapi::Session> session_;
 };
 
 /*!
@@ -352,6 +375,20 @@ class EnsembleRestraint : public ::gmx::IRestraintPotential, private EnsembleHar
                      t,
                      *resources_);
         };
+
+        /*!
+         * \brief Implement the binding protocol that allows access to Session resources.
+         *
+         * The client receives a weak reference to the session with which it can extend the life if necessary, but
+         * should only grab strong references (shared_ptr) for limited amounts of time and to avoid race conditions. In
+         * the future we can use a more formal handle mechanism.
+         *
+         * \param session weak reference to the session
+         */
+        void bindSession(std::weak_ptr<gmxapi::Session> session)
+        {
+            resources_->setSession(std::move(session));
+        }
 
         void setResources(std::unique_ptr<EnsembleResources>&& resources)
         {
