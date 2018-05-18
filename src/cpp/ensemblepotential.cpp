@@ -27,7 +27,7 @@ void EnsembleResourceHandle::reduce(const Matrix<double> &send,
 
 void EnsembleResourceHandle::stop()
 {
-    auto signaller = gmxapi::getMdrunnerSignal(session_.get(), gmxapi::md::signals::STOP);
+    auto signaller = gmxapi::getMdrunnerSignal(session_, gmxapi::md::signals::STOP);
 
     // Should probably check that the function object has been initialized...
     signaller();
@@ -319,34 +319,14 @@ EnsembleResourceHandle EnsembleResources::getHandle() const
     assert(bool(reduce_));
     handle.reduce_ = &reduce_;
 
-    if (!session_.expired())
-    {
-        auto sessionHandle = session_.lock();
-        if (sessionHandle)
-        {
-            handle.session_ = sessionHandle;
-        }
-        else
-        {
-            // What?
-        }
-    }
-    else
-    {
-        // What?
-    }
+    handle.session_ = session_;
 
     return handle;
 }
 
-void EnsembleResources::setSession(std::weak_ptr<gmxapi::Session> &&session)
+void EnsembleResources::setSession(gmxapi::Session* session)
 {
-    if (!session.expired())
-    {
-        session_.swap(session);
-        // Avoid surprises?
-        session.reset();
-    }
+    session_ = session;
 }
 
 // Explicitly instantiate a definition.

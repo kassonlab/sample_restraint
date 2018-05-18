@@ -95,7 +95,7 @@ class EnsembleResourceHandle
         // to be abstracted and hidden...
         const std::function<void(const Matrix<double>&, Matrix<double>*)>* reduce_;
 
-        std::shared_ptr<gmxapi::Session> session_;
+        gmxapi::Session* session_;
 };
 
 /*!
@@ -128,19 +128,18 @@ class EnsembleResources
         EnsembleResourceHandle getHandle() const;
 
         /*!
-         * \brief Acquires a weak pointer to a Session
+         * \brief Acquires a pointer to a Session managing these resources.
          *
-         * \param session weak pointer to Session is reset if acquired by EnsembleResources.
+         * \param session non-owning pointer to Session.
          */
-        void setSession(std::weak_ptr<gmxapi::Session>&& session);
+        void setSession(gmxapi::Session* session);
 
     private:
         //! bound function object to provide ensemble reduce facility.
         std::function<void(const Matrix<double>&, Matrix<double>*)> reduce_;
 
-        // For the moment, instead of extending the life of the session and runner, we'll show some restraint and bind
-        // the functions at the last moment.
-        std::weak_ptr<gmxapi::Session> session_;
+        // Raw pointer to the session in which these resources live.
+        gmxapi::Session* session_;
 };
 
 /*!
@@ -385,9 +384,9 @@ class EnsembleRestraint : public ::gmx::IRestraintPotential, private EnsembleHar
          *
          * \param session weak reference to the session
          */
-        void bindSession(std::weak_ptr<gmxapi::Session> session)
+        void bindSession(gmxapi::Session* session) override
         {
-            resources_->setSession(std::move(session));
+            resources_->setSession(session);
         }
 
         void setResources(std::unique_ptr<EnsembleResources>&& resources)
