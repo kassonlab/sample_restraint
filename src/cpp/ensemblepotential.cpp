@@ -319,6 +319,7 @@ EnsembleResourceHandle EnsembleResources::getHandle() const
     assert(bool(reduce_));
     handle.reduce_ = &reduce_;
 
+    assert(session_);
     handle.session_ = session_;
 
     return handle;
@@ -326,6 +327,7 @@ EnsembleResourceHandle EnsembleResources::getHandle() const
 
 void EnsembleResources::setSession(gmxapi::Session* session)
 {
+    assert(session);
     session_ = session;
 }
 

@@ -378,11 +378,10 @@ class EnsembleRestraint : public ::gmx::IRestraintPotential, private EnsembleHar
         /*!
          * \brief Implement the binding protocol that allows access to Session resources.
          *
-         * The client receives a weak reference to the session with which it can extend the life if necessary, but
-         * should only grab strong references (shared_ptr) for limited amounts of time and to avoid race conditions. In
+         * The client receives a non-owning pointer to the session and cannot extent the life of the session. In
          * the future we can use a more formal handle mechanism.
          *
-         * \param session weak reference to the session
+         * \param session pointer to the current session
          */
         void bindSession(gmxapi::Session* session) override
         {

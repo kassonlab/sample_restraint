@@ -94,18 +94,23 @@ template<class T>
 std::shared_ptr<gmxapi::MDModule> PyRestraint<T>::getModule()
 {
     auto module = std::make_shared<typename std::enable_if<std::is_base_of<gmxapi::MDModule, T>::value, T>::type>();
+    assert(module != nullptr);
     return module;
 }
 
 template<>
 std::shared_ptr<gmxapi::MDModule> PyRestraint<plugin::HarmonicModule>::getModule()
 {
+    auto module = shared_from_this();
+    assert(module != nullptr);
     return shared_from_this();
 }
 
 template<>
 std::shared_ptr<gmxapi::MDModule> PyRestraint<plugin::RestraintModule<plugin::EnsembleRestraint>>::getModule()
 {
+    auto module = shared_from_this();
+    assert(module != nullptr);
     return shared_from_this();
 }
 
@@ -122,6 +127,7 @@ template<>
 std::shared_ptr<gmxapi::MDModule> PyRestraint<MyRestraint>::getModule()
 {
     auto module = std::make_shared<gmxapi::MDModule>();
+    assert(module != nullptr);
     return module;
 }
 
