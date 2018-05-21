@@ -4,6 +4,9 @@
 
 #include "ensemblepotential.h"
 
+#include "gmxapi/session.h"
+#include "gmxapi/md/mdsignals.h"
+
 #include <cmath>
 
 #include <vector>
@@ -17,17 +20,23 @@ template class ::plugin::Matrix<double>;
 void EnsembleResourceHandle::reduce(const Matrix<double> &send,
                                     Matrix<double> *receive) const
 {
-    assert(_reduce);
-    (*_reduce)(send, receive);
+    assert(reduce_);
+    // Should probably check that the function object has been initialized...
+    (*reduce_)(send, receive);
 }
 
-template<typename T_I, typename T_O>
-void EnsembleResourceHandle::map_reduce(const T_I &iterable,
-                                        T_O *output,
-                                        void (*function)(double, const PairHist & input,
-                                                 PairHist * output)
-                                        )
-{}
+void EnsembleResourceHandle::stop()
+{
+    auto signaller = gmxapi::getMdrunnerSignal(session_, gmxapi::md::signals::STOP);
+
+    // Should probably check that the function object has been initialized...
+    signaller();
+}
+
+gmxapi::context::OutputStream *EnsembleResourceHandle::ostream()
+{
+    return ostream_.get();
+}
 
 /*!
  * \brief Apply a Gaussian blur when building a density grid for a list of values.
@@ -311,9 +320,25 @@ gmx::PotentialPointData EnsembleHarmonic::calculate(gmx::Vector v,
 EnsembleResourceHandle EnsembleResources::getHandle() const
 {
     auto handle = EnsembleResourceHandle();
+
     assert(bool(reduce_));
-    handle._reduce = &reduce_;
+    handle.reduce_ = &reduce_;
+
+    assert(session_);
+    handle.session_ = session_;
+
     return handle;
+}
+
+void EnsembleResources::setSession(gmxapi::Session* session)
+{
+    assert(session);
+    session_ = session;
+}
+
+void EnsembleResources::setOutputStream(std::unique_ptr<gmxapi::context::OutputStream> ostream)
+{
+    ostream_ = std::move(ostream);
 }
 
 // Explicitly instantiate a definition.
