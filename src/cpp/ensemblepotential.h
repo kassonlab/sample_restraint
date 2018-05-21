@@ -11,6 +11,7 @@
 
 #include "gmxapi/gromacsfwd.h"
 #include "gmxapi/session.h"
+#include "gmxapi/context/outputstream.h"
 #include "gmxapi/md/mdmodule.h"
 
 #include "gromacs/restraint/restraintpotential.h"
@@ -63,6 +64,35 @@ extern template class Matrix<double>;
  * The semantics of holding this handle aren't determined yet, but it should be held as briefly as possible since it
  * may involve locking global resources or preventing the simulation from advancing. Basically, though, it allows the
  * Context implementation flexibility in how or where it provides services.
+ *
+ * Resources may be incoming input data or functors to trigger output data events.
+ *
+ * \internal
+ * It is not yet clear whether we want to assume that default behavior is for an operation to be called for each edge
+ * on every iterative graph execution, leaving less frequent calls as an optimization, or to fully support occasional
+ * data events issued by nodes during their execution.
+ *
+ * In this example, assume the plugin has specified that it provides a `.ostream.stop` port that provides asynchronous
+ * boolean events. We can provide a template member function that will handle either execution mode.
+ *
+ * ResourceHandle::ostream() will return access to a gmxapi::context::OutputStream object, which will provide
+ * set("stop", true), to give access to a function pointer from a member vector of function pointers.
+ *
+ * In the case that we are triggering asynchronous data events, the function will make the appropriate call. In the case
+ * that we have output at regular intervals, the function will update internal state for the next time the edge is
+ * evaluated.
+ *
+ * In an alternative implementation, we could maintain a data object that could be queried by subscribers, but a publish
+ * and subscribe model seems much more useful, optimizeable, and robust. We can issue the calls to the subscribers and
+ * then be done with it.
+ *
+ * If we need to optimize for reuse of memory locations, we can do one of two things: require that
+ * the subscribing object not return until it has done what it needed with the data (including deep copy) or use
+ * managed handles for the data, possibly with a custom allocator, that prevents rewriting while there are read handles
+ * still open. One way that came up in conversation with Mark to allow some optimization is to allow the recipient of
+ * the handle to make either an `open` that gets a potentially blocking read-lock or an `open` that requests ownership.
+ * If no other consumers of the data request ownership, the ownership can be transferred without a copy. Otherwise, a
+ * copy is made.
  */
 class EnsembleResourceHandle
 {
@@ -96,6 +126,17 @@ class EnsembleResourceHandle
         const std::function<void(const Matrix<double>&, Matrix<double>*)>* reduce_;
 
         gmxapi::Session* session_;
+
+        /*!
+         * \brief Get the current output stream manager.
+         *
+         * The output stream manager provides methods with signatures like `template<class T> set(std::string, T)` so
+         * that a call to ostream()->set("stop", true) will find a registered resource named "stop" that accepts Boolean
+         * data and call it with `true`.
+         */
+        gmxapi::context::OutputStream* ostream();
+    private:
+        std::shared_ptr<gmxapi::context::OutputStream> ostream_;
 };
 
 /*!
@@ -125,14 +166,21 @@ class EnsembleResources
          *
          * \return Handle to current resources.
          */
-        EnsembleResourceHandle getHandle() const;
+         EnsembleResourceHandle getHandle() const;
 
-        /*!
-         * \brief Acquires a pointer to a Session managing these resources.
-         *
-         * \param session non-owning pointer to Session.
-         */
-        void setSession(gmxapi::Session* session);
+         /*!
+          * \brief Acquires a pointer to a Session managing these resources.
+          *
+          * \param session non-owning pointer to Session.
+          */
+         void setSession(gmxapi::Session* session);
+
+         /*!
+          * \brief Sets the OutputStream manager for this set of resources.
+          *
+          * \param ostream ownership of an OutputStream manager
+          */
+         void setOutputStream(std::unique_ptr<gmxapi::context::OutputStream> ostream);
 
     private:
         //! bound function object to provide ensemble reduce facility.
@@ -140,6 +188,9 @@ class EnsembleResources
 
         // Raw pointer to the session in which these resources live.
         gmxapi::Session* session_;
+
+        // Shareable OutputStream object
+        std::shared_ptr<gmxapi::context::OutputStream> ostream_;
 };
 
 /*!

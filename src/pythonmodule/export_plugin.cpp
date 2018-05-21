@@ -324,6 +324,13 @@ class EnsembleRestraintBuilder
             py::list potentialList = subscriber.attr("potential");
             potentialList.append(potential);
 
+            // For the logical operator subscriber, provide the resources object so that the signalling functor can be
+            // added to it.
+            {
+                auto input = boolSubscriber_.attr("input");
+                py::list port = input.attr("boolean");
+                port.append(resources);
+            }
         };
 
         /*!
@@ -336,11 +343,28 @@ class EnsembleRestraintBuilder
          */
         void addSubscriber(py::object subscriber)
         {
-            assert(py::hasattr(subscriber, "potential"));
-            subscriber_ = subscriber;
+            if (py::hasattr(subscriber, "potential"))
+            {
+                subscriber_ = subscriber;
+            }
+            if (py::hasattr(subscriber, "input"))
+            {
+                // It looks like we need to formalize a gmxapi mechanism for this sort of thing. But will we do something
+                // to facilitate automatic interoperability between Python and C++ elements? Should we assume all
+                // elements will be wrapped in Python? Or should we provide a means by which all elements have a C++
+                // interface?
+                auto input = subscriber.attr("input");
+                if (py::hasattr(input, "boolean"))
+                {
+                    // This subscriber will receive the signal event to be logically processed. When the subscriber is
+                    // built, it will provide us with the signal functor.
+                    boolSubscriber_ = subscriber;
+                }
+            }
         };
 
         py::object subscriber_;
+        py::object boolSubscriber_;
         py::object context_;
         std::vector<unsigned long int> siteIndices_;
 

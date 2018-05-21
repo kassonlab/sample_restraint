@@ -33,6 +33,11 @@ void EnsembleResourceHandle::stop()
     signaller();
 }
 
+gmxapi::context::OutputStream *EnsembleResourceHandle::ostream()
+{
+    return ostream_.get();
+}
+
 /*!
  * \brief Apply a Gaussian blur when building a density grid for a list of values.
  *
@@ -329,6 +334,11 @@ void EnsembleResources::setSession(gmxapi::Session* session)
 {
     assert(session);
     session_ = session;
+}
+
+void EnsembleResources::setOutputStream(std::unique_ptr<gmxapi::context::OutputStream> ostream)
+{
+    ostream_ = std::move(ostream);
 }
 
 // Explicitly instantiate a definition.
