@@ -317,19 +317,38 @@ class EnsembleRestraintBuilder
             // To use a reduce function on the Python side, we need to provide it with a Python buffer-like object,
             // so we will create one here. Note: it looks like the SharedData element will be useful after all.
             auto resources = std::make_shared<plugin::EnsembleResources>(std::move(functor));
+            assert(resources != nullptr);
 
             auto potential = PyRestraint<plugin::RestraintModule<plugin::EnsembleRestraint>>::create(name_, siteIndices_, params_, resources);
 
             auto subscriber = subscriber_;
-            py::list potentialList = subscriber.attr("potential");
-            potentialList.append(potential);
-
+            if (subscriber && py::hasattr(subscriber, "potential"))
+            {
+                py::list potentialList = subscriber.attr("potential");
+                potentialList.append(potential);
+            }
+            else
+            {
+                // raise a warning: building with no subscribers
+            }
             // For the logical operator subscriber, provide the resources object so that the signalling functor can be
             // added to it.
+            if (boolSubscriber_ && py::hasattr(boolSubscriber_, "input"))
             {
                 auto input = boolSubscriber_.attr("input");
-                py::list port = input.attr("boolean");
-                port.append(resources);
+                if (py::hasattr(input, "boolean"))
+                {
+                    py::list port = input.attr("boolean");
+                    port.append(resources);
+                }
+                else
+                {
+                    // how did we end up in boolSubscriber_?
+                }
+            }
+            else
+            {
+                // fine. no subscriber.
             }
         };
 
