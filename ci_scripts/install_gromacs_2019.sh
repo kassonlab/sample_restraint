@@ -28,6 +28,7 @@ pushd $HOME
          -DGMX_ENABLE_CCACHE=ON \
          -DCMAKE_C_COMPILER=$CC \
          -DGMX_DOUBLE=$GMX_DOUBLE \
+         -DGMX_SIMD=AVX_256 \
          -DGMX_MPI=$GMX_MPI \
          -DGMX_THREAD_MPI=$GMX_THREAD_MPI \
          -DGMXAPI=ON \
